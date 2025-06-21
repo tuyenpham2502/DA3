@@ -2,7 +2,7 @@
 #define _MY_CONFIG_H_
 
 const char* ssidAP     = "ESP32_IOT";     // Tên wifi AP Mode
-const char* passwordAP = "";          // Mật khẩu AP Mode
+const char* passwordAP = "17263544";          // Mật khẩu AP Mode
 
 String  Essid   = "";                 // EEPROM tên wifi nhà bạn
 String  Epass   = "";                 // EEPROM mật khẩu wifi nhà bạn

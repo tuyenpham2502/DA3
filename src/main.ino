@@ -12,7 +12,6 @@ char BLYNK_AUTH_TOKEN[32]   =   "";
 // Import required libraries
 #include <WiFi.h>
 #include <WiFiClient.h>
-#include <BlynkSimpleEsp32.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <AsyncTCP.h>
@@ -22,14 +21,44 @@ char BLYNK_AUTH_TOKEN[32]   =   "";
 #include "data_config.h"
 #include <EEPROM.h>
 #include <Arduino_JSON.h>
+// Include PubSubClient library for MQTT
+#include <PubSubClient.h>
+
+// MQTT broker details
+const char* mqtt_server = "192.168.0.103";
+const int mqtt_port = 1883;
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// Function to connect to MQTT broker
+void connectMQTT() {
+  while (!client.connected()) {
+    Serial.print("Connecting to MQTT...");
+    if (client.connect("ESP32Client")) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" retrying in 5 seconds");
+      delay(5000);
+    }
+  }
+}
+
+// Function to publish sensor data
+void publishSensorData() {
+  extern float tempValue;
+  extern int humiValue;
+  extern int soilMoistureValue;
+  String payload = String("{\"temperature\": ") + String(tempValue) + String(", \"humidity\": ") + String(humiValue) + String(", \"soilMoisture\": ") + String(soilMoistureValue) + String("}");
+  client.publish("esp32/sensors", payload.c_str());
+}
 #include "icon.h"
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 
 //----------------------- Khai báo 1 số biến Blynk -----------------------
-bool blynkConnect = true;
-BlynkTimer timer; 
 // Một số Macro
 #define ENABLE    1
 #define DISABLE   0
@@ -126,6 +155,7 @@ TaskHandle_t TaskSoilMoistureSensor_handle = NULL;
 TaskHandle_t TaskAutoWarning_handle = NULL;
 void setup(){
   Serial.begin(115200);
+  client.setServer(mqtt_server, mqtt_port);
   // Đọc data setup từ eeprom
   EEPROM.begin(512);
   readEEPROM();
@@ -165,7 +195,12 @@ void setup(){
 }
 
 void loop() {
-  vTaskDelete(NULL);
+  if (!client.connected()) {
+    connectMQTT();
+  }
+  client.loop();
+  publishSensorData();
+  delay(5000);
 }
 
 //--------------------Task đo DHT11 ---------------
@@ -600,24 +635,6 @@ void connectSTA() {
        delay(2000);
         strcpy(BLYNK_AUTH_TOKEN,Etoken.c_str());
         
-        Blynk.config(BLYNK_AUTH_TOKEN);
-        blynkConnect = Blynk.connect();
-        if(blynkConnect == false) {
-            screenOLED = SCREEN8;
-            delay(2000);
-            connectAPMode(); 
-        }
-        else {
-            Serial.println("Da ket noi BLYNK");
-            enableShow = ENABLE;
-            // MODE đã kết nối wifi, đã kết nối blynk
-            screenOLED = SCREEN7;
-            delay(2000);
-            xTaskCreatePinnedToCore(TaskBlynk,            "TaskBlynk" ,           1024*16 ,  NULL,  20  ,  NULL ,  1);
-            timer.setInterval(1000L, myTimer);  
-            buzzerBeep(5);  
-            return; 
-        }
       }
       else {
         digitalWrite(BUZZER, ENABLE);
@@ -744,7 +761,6 @@ void TaskAutoWarning(void *pvParameters)  {
     delay(20000);
     while(1) {
       if(autoWarning == 1) {
-          check_data_and_send_to_blynk(ENABLE, tempValue, humiValue, soilMoistureValue);
       }
       delay(10000);
     }
@@ -753,41 +769,13 @@ void TaskAutoWarning(void *pvParameters)  {
 //----------------------- Send send Data value to Blynk every 2 seconds--------
 void myTimer() {
     
-    Blynk.virtualWrite(V0, tempValue);  
-    Blynk.virtualWrite(V1, humiValue);
-    Blynk.virtualWrite(V2, soilMoistureValue);
-    Blynk.virtualWrite(V4, autoWarning); 
 }
 //--------------Read button from BLYNK and send notification back to Blynk-----------------------
 int checkAirQuality = 0;
-BLYNK_WRITE(V3) {
-    enableShow = DISABLE;
-    checkAirQuality = param.asInt();
-    if(checkAirQuality == 1) {
-      buzzerBeep(1);
-      check_data_and_send_to_blynk(DISABLE, tempValue, humiValue, soilMoistureValue);
-      screenOLED = SCREEN12;
-    } 
-}
 
 //------------------------- check autoWarning from BLYNK  -----------------------
-BLYNK_WRITE(V4) {
-    enableShow = DISABLE;
-    autoWarning = param.asInt();
-    buzzerBeep(1);
-    EEPROM.write(210, autoWarning);  EEPROM.commit();
-    if(autoWarning == 0) screenOLED = SCREEN11;
-    else screenOLED = SCREEN10;
-}
 
 //---------------------------Task TaskSwitchAPtoSTA---------------------------
-void TaskBlynk(void *pvParameters) {
-    while(1) {
-      Blynk.run();
-      timer.run(); 
-      delay(10);
-    }
-}
 
 /*
  * Các hàm liên quan đến lưu dữ liệu cài đặt vào EEPROM
@@ -880,7 +868,6 @@ void button_press_short_callback(uint8_t button_id) {
         buzzerBeep(1);
         Serial.println("btDOWN press short");
         enableShow = DISABLE;
-        check_data_and_send_to_blynk(DISABLE, tempValue, humiValue, soilMoistureValue);
         screenOLED = SCREEN12;
         break;  
     } 
@@ -906,7 +893,6 @@ void button_press_long_callback(uint8_t button_id) {
       enableShow = DISABLE;
       autoWarning = 1 - autoWarning;
       EEPROM.write(210, autoWarning);  EEPROM.commit();
-      Blynk.virtualWrite(V4, autoWarning); 
       if(autoWarning == 0) screenOLED = SCREEN11;
       else screenOLED = SCREEN10;
       break;  
@@ -939,55 +925,19 @@ void blinkLED(int numberBlink) {
  * @param humi Độ ẩm hiện tại        %
  * @param soilMoisture độ ẩm đất hiện tại %
  */
-void check_data_and_send_to_blynk(bool autoWarning, int temp, int humi, int soilMoisture) {
   String notifications = "";
   int tempIndex = 0;
   int soilMoistureIndex = 0;
   int humiIndex = 0;
-  if(dht11ReadOK ==  true) {
-    if(autoWarning == 0) {
-      if(temp < EtempThreshold1 )tempIndex = 1;
-      else if(temp >= EtempThreshold1 && temp <=  EtempThreshold2)  tempIndex = 2;
-      else tempIndex = 3;
       
 
-      if(humi < EhumiThreshold1 ) humiIndex = 1;
-      else if(humi >= EhumiThreshold1 && humi <= EhumiThreshold2)   humiIndex = 2;
-      else humiIndex = 3;
 
-      if(soilMoisture < EsoilMoistureThreshold1 ) soilMoistureIndex = 1;
-      else if(soilMoisture >= EsoilMoistureThreshold1 && soilMoisture <= EsoilMoistureThreshold2)   soilMoistureIndex = 2;
-      else soilMoistureIndex = 3;
 
       
-      notifications = snTemp[tempIndex] + String(temp) + "*C . " + snHumi[humiIndex] + String(humi) + "% . " + snSoilMoisture[soilMoistureIndex] + String(soilMoisture) + "% . " ;  
       
-      Blynk.logEvent("check_data",notifications);
-    } else {
-      if(temp < EtempThreshold1 )tempIndex = 1;
-      else if(temp >= EtempThreshold1 && temp <=  EtempThreshold2)  tempIndex = 0;
-      else tempIndex = 3;
       
 
-      if(humi < EhumiThreshold1 ) humiIndex = 1;
-      else if(humi >= EhumiThreshold1 && humi <= EhumiThreshold2)   humiIndex = 0;
-      else humiIndex = 3;
 
-      if(soilMoisture < EsoilMoistureThreshold1 ) soilMoistureIndex = 1;
-      else if(soilMoisture >= EsoilMoistureThreshold1 && soilMoisture <= EsoilMoistureThreshold2)   soilMoistureIndex = 0;
-      else soilMoistureIndex = 3;
 
-      if(tempIndex == 0 && humiIndex == 0 && soilMoistureIndex == 0)
-        notifications = "";
-      else {
-        if(tempIndex != 0) notifications = notifications + snTemp[tempIndex] + String(temp) + "*C . ";
-        if(humiIndex != 0) notifications = notifications + snHumi[humiIndex] + String(humi) + "% . " ;
-        if(soilMoistureIndex != 0) notifications = notifications + snSoilMoisture[soilMoistureIndex] + String(soilMoisture) + "% . " ;
-        Blynk.logEvent("auto_warning",notifications);
-      }
-    }
 
-    Serial.println(notifications);
-  }
   
-}
