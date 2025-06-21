@@ -197,6 +197,9 @@ void setup(){
 void loop() {
   if (!client.connected()) {
     connectMQTT();
+    screenOLED = SCREEN5; // Screen for failed MQTT connection
+  } else {
+    screenOLED = SCREEN7; // Screen for successful MQTT connection
   }
   client.loop();
   publishSensorData();
