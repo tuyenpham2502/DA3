@@ -21,7 +21,7 @@
 - AsyncTCP
   * Purpose: Async TCP operations
   * Dependency for ESPAsyncWebServer
-- PubSubClient (To be added)
+- PubSubClient
   * Purpose: MQTT client implementation
   * Features: Subscribe/Publish functionality
 
@@ -42,6 +42,7 @@
 - Real-time processing requirements
 - WiFi dependency for remote features
 - MQTT broker connectivity requirements
+- Removal of Blynk dependency
 
 ## Development Environment
 - IDE: Visual Studio Code with PlatformIO

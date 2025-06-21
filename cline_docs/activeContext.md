@@ -1,22 +1,27 @@
 # Active Context
 
 ## Current Focus
-- Initial memory bank setup and project documentation
+- Migrating from Blynk to MQTT for remote monitoring in `src/main.ino`.
 
 ## Recent Changes
-- Created memory bank structure
-- Created productContext.md with initial project analysis
-- Created .gitignore file
+- Created memory bank structure.
+- Created productContext.md with initial project analysis.
+- Created .gitignore file.
+- Updated `productContext.md` to reflect MQTT integration.
 
 ## Active Files
-- src/BLKLab_PRJ01_Tram_Giam_Sat_Nong_Nghiep_Smart_Farm.ino (main application file)
+- src/main.ino (main application file)
 - src/data_config.h (configuration file)
 - src/icon.h (UI icons/graphics)
 - platformio.ini (project configuration)
+- cline_docs/productContext.md
+- cline_docs/systemPatterns.md
+- cline_docs/techContext.md
+- cline_docs/progress.md
 
 ## Next Steps
-1. Complete memory bank initialization
-2. Analyze main application code
-3. Document system patterns and architecture
-4. Document technical dependencies and constraints
-5. Establish progress baseline
+1. Update `systemPatterns.md` to reflect MQTT integration.
+2. Update `techContext.md` to reflect MQTT integration.
+3. Update `progress.md` to reflect the current task.
+4. Modify `src/main.ino` to remove Blynk and add MQTT.
+5. Test MQTT connectivity and data publishing.
