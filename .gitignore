@@ -1,0 +1,44 @@
+# Compiled Object files
+*.o
+*.elf
+
+# Editor files
+.vscode/
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Build files
+.pio/
+.vscode/
+.history/
+.ccls-cache/
+.clangd/
+.cache/
+.sconsign.dblite
+.env
+.venv
+build/
+dist/
+
+# PlatformIO specific
+.pioenvs/
+.piolibdeps/
+.platformio/
+.vscode/c_cpp_properties.json
+.vscode/settings.json
+
+# Dependencies
+lib/
+.idea/
+.project
+.settings/
+.classpath
+
+# Logs and databases
+*.log
+*.db
+
+# Temporary files
+*~
+*.tmp
