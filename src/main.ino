@@ -32,10 +32,12 @@ PubSubClient client(espClient);
 
 // Function to connect to MQTT broker
 void connectMQTT() {
+  client.setCallback(mqttCallback); // Set MQTT callback
   while (!client.connected()) {
     Serial.print("Connecting to MQTT...");
     if (client.connect("ESP32Client")) {
       Serial.println("connected");
+      client.subscribe("esp32/thresholds"); // Subscribe to thresholds topic
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -54,6 +56,37 @@ void publishSensorData() {
   client.publish("esp32/sensors", payload.c_str());
 }
 #include "icon.h"
+
+// MQTT callback function
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived on topic: ");
+  Serial.println(topic);
+  String message;
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  JSONVar myObject = JSON.parse(message);
+  if (JSON.typeof(myObject) == "undefined") {
+    Serial.println("Invalid JSON received");
+    return;
+  }
+  if (myObject.hasOwnProperty("tempThreshold1"))
+    EtempThreshold1 = (int)myObject["tempThreshold1"];
+  if (myObject.hasOwnProperty("tempThreshold2"))
+    EtempThreshold2 = (int)myObject["tempThreshold2"];
+  if (myObject.hasOwnProperty("humiThreshold1"))
+    EhumiThreshold1 = (int)myObject["humiThreshold1"];
+  if (myObject.hasOwnProperty("humiThreshold2"))
+    EhumiThreshold2 = (int)myObject["humiThreshold2"];
+  if (myObject.hasOwnProperty("soilMoistureThreshold1"))
+    EsoilMoistureThreshold1 = (int)myObject["soilMoistureThreshold1"];
+  if (myObject.hasOwnProperty("soilMoistureThreshold2"))
+    EsoilMoistureThreshold2 = (int)myObject["soilMoistureThreshold2"];
+  writeEEPROM(); // Save updated thresholds to EEPROM
+  Serial.println("Thresholds updated via MQTT");
+  delay(1000); // Ensure all operations complete before reset
+  ESP.restart(); // Reset the device
+}
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
