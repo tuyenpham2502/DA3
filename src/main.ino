@@ -25,8 +25,7 @@ char BLYNK_AUTH_TOKEN[32]   =   "";
 #include <PubSubClient.h>
 
 // MQTT broker details
-const char* mqtt_server = "192.168.0.103";
-const int mqtt_port = 1883;
+const int mqtt_port = 1883; // MQTT port
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -188,10 +187,10 @@ TaskHandle_t TaskSoilMoistureSensor_handle = NULL;
 TaskHandle_t TaskAutoWarning_handle = NULL;
 void setup(){
   Serial.begin(115200);
-  client.setServer(mqtt_server, mqtt_port);
   // Đọc data setup từ eeprom
   EEPROM.begin(512);
   readEEPROM();
+  client.setServer(Emqtt_server.c_str(), mqtt_port);
     // Khởi tạo LED
   pinMode(LED, OUTPUT);
   // Khởi tạo RELAY
@@ -467,11 +466,17 @@ void TaskOLEDDisplay(void *pvParameters) {
             oled.print("Dang ket noi..");
                         
 
-            for(int i = 0; i < FRAME_COUNT_blynkOLED; i++) {
-              clearRectangle(0, 32, 32, 64);
-              oled.drawBitmap(0, 32, blynkOLED[i], FRAME_WIDTH_32, FRAME_HEIGHT_32, 1);
-              oled.display();
-              delay(FRAME_DELAY);
+            for (int i = 0; i < FRAME_COUNT_blynkOLED; i++) {
+                String topic = "your/mqtt/topic"; // Replace with your MQTT topic
+                String payload = String(pgm_read_byte(&blynkOLED[i][0])); // Access data from program memory
+
+                if (client.connected()) {
+                    client.publish(topic.c_str(), payload.c_str()); // Publish to MQTT
+                } else {
+                  screenOLED = SCREEN9;
+                }
+
+                delay(FRAME_DELAY); // Optional delay between frames
             }
 
           break;
@@ -726,6 +731,8 @@ void getDataFromClient(AsyncWebServerRequest *request, uint8_t *data, size_t len
     Epass = (const char*)myObject["pass"] ;
   if(myObject.hasOwnProperty("token"))
     Etoken = (const char*)myObject["token"];
+  if(myObject.hasOwnProperty("mqtt_server"))
+    Emqtt_server = (const char*)myObject["mqtt_server"];
   if(myObject.hasOwnProperty("typePlant"))
     EtypePlant = (int) myObject["typePlant"];
   if(myObject.hasOwnProperty("tempThreshold1"))
@@ -753,6 +760,8 @@ void printValueSetup() {
     Serial.println(Epass);
     Serial.print("token = ");
     Serial.println(Etoken);
+    Serial.print("mqtt_server = ");
+    Serial.println(Emqtt_server);
     Serial.print("EtypePlant = ");
     Serial.println(EtypePlant);
     Serial.print("tempThreshold1 = ");
@@ -777,6 +786,7 @@ String getJsonData() {
   myObject["ssid"]  = Essid;
   myObject["pass"]  = Epass;
   myObject["token"] = Etoken;
+  myObject["mqtt_server"] = Emqtt_server;
   myObject["typePlant"] = EtypePlant;
   myObject["tempThreshold1"] = EtempThreshold1;
   myObject["tempThreshold2"] = EtempThreshold2;
@@ -823,7 +833,9 @@ void readEEPROM() {
     for (int i = 32; i < 64; ++i)      //Reading Password
         Epass += char(EEPROM.read(i)); 
     for (int i = 64; i < 96; ++i)      //Reading Password
-        Etoken += char(EEPROM.read(i)); 
+        Etoken += char(EEPROM.read(i));
+    for (int i = 96; i < 128; ++i)     //Reading MQTT Server
+        Emqtt_server += char(EEPROM.read(i));
     if(Essid.length() == 0) Essid = "BLK";
 
     EtypePlant      = EEPROM.read(199);
@@ -859,6 +871,8 @@ void writeEEPROM() {
           EEPROM.write(32+i, Epass[i]);
     for (int i = 0; i < Etoken.length(); ++i)
           EEPROM.write(64+i, Etoken[i]);
+    for (int i = 0; i < Emqtt_server.length(); ++i)
+          EEPROM.write(96+i, Emqtt_server[i]);
     EEPROM.write(199, EtypePlant);               // lưu kiểu cây trồng
     
     EEPROM.write(200, EtempThreshold1);          // lưu ngưỡng nhiệt độ 1
@@ -921,7 +935,9 @@ void button_press_long_callback(uint8_t button_id) {
       break;
     case BUTTON2_ID :
       buzzerBeep(2);
-      Serial.println("btUP press short");
+      Serial.println("btUP press long - Reconnecting WiFi and MQTT");
+      connectSTA(); // Reconnect WiFi
+      connectMQTT(); // Reconnect MQTT
       break;
     case BUTTON3_ID :
       buzzerBeep(2);
@@ -953,19 +969,6 @@ void blinkLED(int numberBlink) {
   }  
 }
 
-/**
- * @brief Kiểm tra và gửi lên BLYNK
- *
- * @param autoWarning auto Warning
- * @param temp Nhiệt độ hiện tại    *C
- * @param humi Độ ẩm hiện tại        %
- * @param soilMoisture độ ẩm đất hiện tại %
- */
-  String notifications = "";
-  int tempIndex = 0;
-  int soilMoistureIndex = 0;
-  int humiIndex = 0;
-      
 
 
 

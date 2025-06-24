@@ -108,6 +108,9 @@ const char index_html[] PROGMEM = R"rawliteral(
 
           <h4>Mã Token Blynk</h4>
           <input type="text" id="token" name="token" placeholder="Your Token Blynk ..">
+
+          <h4>Địa chỉ MQTT Server</h4>
+          <input type="text" id="mqtt_server" name="mqtt_server" placeholder="Your MQTT Server IP ..">
           
           <hr>
 
@@ -172,6 +175,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           ssid   : "",
           pass   : "",
           token : "",
+          mqtt_server : "",
           typePlant : "",
           tempThreshold1 : "",
           tempThreshold2 : "",
@@ -180,10 +184,11 @@ const char index_html[] PROGMEM = R"rawliteral(
           soilMoistureThreshold1 : "",
           soilMoistureThreshold2 : "",
     };
-     const ssid      = document.getElementById("ssid");
-     const pass      = document.getElementById("pass");
-     const token     = document.getElementById("token");
-     const typePlant = document.getElementById("caytrong");
+     const ssid        = document.getElementById("ssid");
+     const pass        = document.getElementById("pass");
+     const token       = document.getElementById("token");
+     const mqtt_server = document.getElementById("mqtt_server");
+     const typePlant   = document.getElementById("caytrong");
 
     const tempThreshold1 =  document.getElementsByName('tempThreshold1')[0];
     const tempThreshold2 =  document.getElementsByName('tempThreshold2')[0];
@@ -223,6 +228,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         ssid.value   = obj.ssid;
         pass.value   = obj.pass;
         token.value  = obj.token;
+        mqtt_server.value = obj.mqtt_server;
         typePlant.value = obj.typePlant;
         tempThreshold1.value = obj.tempThreshold1;
         tempThreshold2.value = obj.tempThreshold2;
@@ -330,6 +336,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           ssid   : ssid.value,
           pass   : pass.value,
           token  :  token.value,
+          mqtt_server : mqtt_server.value,
           typePlant :  Number(typePlant.value),
           tempThreshold1 : Number(tempThreshold1.value),
           tempThreshold2 : Number(tempThreshold2.value),

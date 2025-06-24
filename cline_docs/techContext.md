@@ -43,6 +43,8 @@
 - WiFi dependency for remote features
 - MQTT broker connectivity requirements
 - Removal of Blynk dependency
+- EEPROM for persistent storage of MQTT server configuration
+- Button input handling for manual reconnection
 
 ## Development Environment
 - IDE: Visual Studio Code with PlatformIO

@@ -7,6 +7,7 @@
   * Web Interface (ESPAsyncWebServer)
   * Remote Access (MQTT)
 - Sensor data collection and processing
+- Configurable MQTT server address via web interface
 
 ## Technical Patterns
 ### Data Flow
@@ -15,6 +16,7 @@
 3. Local display (OLED)
 4. Web interface updates
 5. Remote synchronization (MQTT)
+6. MQTT server configuration persistence (EEPROM)
 
 ### Component Architecture
 - Hardware Interfaces
@@ -31,6 +33,7 @@
 - Sensor reading validation
 - Data transmission retry mechanisms
 - Fallback display modes
+- Manual Wi-Fi/MQTT reconnection via button press
 
 ## Operational Patterns
 - Concurrent operation handling
