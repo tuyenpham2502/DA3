@@ -25,9 +25,35 @@ char BLYNK_AUTH_TOKEN[32]   =   "";
 #include <PubSubClient.h>
 
 // MQTT broker details
-const int mqtt_port = 1883; // MQTT port
+const int mqtt_port = 2000; // MQTT port
 WiFiClient espClient;
 PubSubClient client(espClient);
+
+// Define ENABLE, DISABLE, and RELAY here to ensure they are globally accessible
+#define ENABLE    1
+#define DISABLE   0
+#define RELAY         25
+
+typedef enum {
+  SCREEN0,
+  SCREEN1,
+  SCREEN2,
+  SCREEN3,
+  SCREEN4,
+  SCREEN5,
+  SCREEN6,
+  SCREEN7,
+  SCREEN8,
+  SCREEN9,
+  SCREEN10,
+  SCREEN11,
+  SCREEN12,
+  SCREEN13
+}SCREEN;
+int screenOLED = SCREEN0;
+
+bool enableShow = DISABLE;
+bool autoWarning = DISABLE;
 
 // Function to connect to MQTT broker
 void connectMQTT() {
@@ -37,6 +63,8 @@ void connectMQTT() {
     if (client.connect("ESP32Client")) {
       Serial.println("connected");
       client.subscribe("esp32/thresholds"); // Subscribe to thresholds topic
+      client.subscribe("esp32/relay/control"); // Subscribe to relay control topic
+      client.subscribe("esp32/autoWarning/control"); // Subscribe to autoWarning control topic
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -54,6 +82,13 @@ void publishSensorData() {
   String payload = String("{\"temperature\": ") + String(tempValue) + String(", \"humidity\": ") + String(humiValue) + String(", \"soilMoisture\": ") + String(soilMoistureValue) + String("}");
   client.publish("esp32/sensors", payload.c_str());
 }
+
+// Function to publish autoWarning and RELAY status
+void publishStatusData() {
+  String payload = String("{\"autoWarning\": ") + String(autoWarning) + String(", \"relayState\": ") + String(digitalRead(RELAY)) + String("}");
+  client.publish("esp32/status", payload.c_str());
+}
+
 #include "icon.h"
 
 // MQTT callback function
@@ -69,31 +104,67 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     Serial.println("Invalid JSON received");
     return;
   }
-  if (myObject.hasOwnProperty("tempThreshold1"))
-    EtempThreshold1 = (int)myObject["tempThreshold1"];
-  if (myObject.hasOwnProperty("tempThreshold2"))
-    EtempThreshold2 = (int)myObject["tempThreshold2"];
-  if (myObject.hasOwnProperty("humiThreshold1"))
-    EhumiThreshold1 = (int)myObject["humiThreshold1"];
-  if (myObject.hasOwnProperty("humiThreshold2"))
-    EhumiThreshold2 = (int)myObject["humiThreshold2"];
-  if (myObject.hasOwnProperty("soilMoistureThreshold1"))
-    EsoilMoistureThreshold1 = (int)myObject["soilMoistureThreshold1"];
-  if (myObject.hasOwnProperty("soilMoistureThreshold2"))
-    EsoilMoistureThreshold2 = (int)myObject["soilMoistureThreshold2"];
-  writeEEPROM(); // Save updated thresholds to EEPROM
-  Serial.println("Thresholds updated via MQTT");
-  delay(1000); // Ensure all operations complete before reset
-  ESP.restart(); // Reset the device
+  if (String(topic) == "esp32/thresholds") {
+    if (myObject.hasOwnProperty("tempThreshold1"))
+      EtempThreshold1 = (int)myObject["tempThreshold1"];
+    if (myObject.hasOwnProperty("tempThreshold2"))
+      EtempThreshold2 = (int)myObject["tempThreshold2"];
+    if (myObject.hasOwnProperty("humiThreshold1"))
+      EhumiThreshold1 = (int)myObject["humiThreshold1"];
+    if (myObject.hasOwnProperty("humiThreshold2"))
+      EhumiThreshold2 = (int)myObject["humiThreshold2"];
+    if (myObject.hasOwnProperty("soilMoistureThreshold1"))
+      EsoilMoistureThreshold1 = (int)myObject["soilMoistureThreshold1"];
+    if (myObject.hasOwnProperty("soilMoistureThreshold2"))
+      EsoilMoistureThreshold2 = (int)myObject["soilMoistureThreshold2"];
+    writeEEPROM(); // Save updated thresholds to EEPROM
+    Serial.println("Thresholds updated via MQTT");
+    delay(1000); // Ensure all operations complete before reset
+    ESP.restart(); // Reset the device
+  } 
+  else if (String(topic) == "esp32/autoWarning/control") {
+    Serial.println("Received autoWarning control message");
+    if (myObject.hasOwnProperty("autoWarningState")) {
+      Serial.print("autoWarningState received: ");
+      Serial.println((int)myObject["autoWarningState"]);
+      int state = (int)myObject["autoWarningState"];
+      if (state == 1 || state == 0) {
+        autoWarning = state;
+        EEPROM.write(210, autoWarning);
+        EEPROM.commit();
+        Serial.print("Auto Warning set to: ");
+        Serial.println(autoWarning == 1 ? "ENABLE" : "DISABLE");
+        enableShow = DISABLE;
+        if (autoWarning == 0) screenOLED = SCREEN11;
+        else screenOLED = SCREEN10;
+      } else {
+        Serial.println("Invalid autoWarningState value received (must be 0 or 1)");
+      }
+    } else {
+      Serial.println("Missing 'autoWarningState' in MQTT payload");
+    }
+  }
+  else if (String(topic) == "esp32/relay/control") {
+    if (myObject.hasOwnProperty("relayState")) {
+      int relayState = (int)myObject["relayState"];
+      if (relayState == 1) {
+        digitalWrite(RELAY, ENABLE);
+        Serial.println("Relay ON via MQTT");
+      } else if (relayState == 0) {
+        digitalWrite(RELAY, DISABLE);
+        Serial.println("Relay OFF via MQTT");
+      } else {
+        Serial.println("Invalid relayState value received");
+      }
+    } else {
+      Serial.println("Missing 'relayState' in MQTT payload");
+    }
+  } 
 }
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 
-//----------------------- Khai báo 1 số biến Blynk -----------------------
-// Một số Macro
-#define ENABLE    1
-#define DISABLE   0
 // ---------------------- Khai báo cho OLED 1.3 --------------------------
 #include <SPI.h>
 #include <Wire.h>
@@ -115,25 +186,6 @@ Adafruit_SH1106G oled = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLE
 #define OLED_SDA      21
 #define OLED_SCL      22
 
-typedef enum {
-  SCREEN0,
-  SCREEN1,
-  SCREEN2,
-  SCREEN3,
-  SCREEN4,
-  SCREEN5,
-  SCREEN6,
-  SCREEN7,
-  SCREEN8,
-  SCREEN9,
-  SCREEN10,
-  SCREEN11,
-  SCREEN12,
-  SCREEN13
-}SCREEN;
-int screenOLED = SCREEN0;
-
-bool enableShow = DISABLE;
 
 #define SAD    0
 #define NORMAL 1
@@ -142,7 +194,6 @@ int warningTempState = SAD;
 int warningHumiState = NORMAL;
 int warningSoilMoistureState = HAPPY;
 
-bool autoWarning = DISABLE;
 // --------------------- Cảm biến DHT11 ---------------------
 #include "DHT.h"
 #define DHT11_PIN         26
@@ -160,8 +211,6 @@ int soilMoistureValue = 0;
 #define LED           33
 // Khai báo BUZZER
 #define BUZZER        2
-// Khai báo RELAY
-#define RELAY         25
 
 uint32_t timeCountBuzzerWarning = 0;
 #define TIME_BUZZER_WARNING     300  //thời gian cảnh báo bằng còi (đơn vị giây)
@@ -235,6 +284,7 @@ void loop() {
   }
   client.loop();
   publishSensorData();
+  publishStatusData(); // Publish autoWarning and RELAY status
   delay(5000);
 }
 
