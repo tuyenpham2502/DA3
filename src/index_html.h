@@ -46,7 +46,8 @@ const char index_html[] PROGMEM = R"rawliteral(
       height : 85px;
     }
     input[type=number].tempThre , input[type=number].humiThre , 
-    input[type=number].soilThre {
+    input[type=number].soilThre , input[type=number].dustThre ,
+    input[type=number].mq135Thre {
       width: 30%;
       padding: 12px 20px;
       margin: 8px 2px;
@@ -116,18 +117,16 @@ const char index_html[] PROGMEM = R"rawliteral(
 
           <h2>Cấu hình ngưỡng</h2>
 
-          <h4>Chọn loại cây trồng :</h4>
+          <h4>Chọn loại môi trường :</h4>
           <select name="caytrong" id="caytrong" onchange="checkUserSelected()">
             <option value="0">Tự cài đặt</option>
-            <option value="1">Rau mầm</option>
-            <option value="2">Bắp cải</option>
-            <option value="3">Cà chua</option>
-            <option value="4">Xà lách</option>
-            <option value="5">Dưa chuột</option>
-            <option value="6">Sen đá</option>
-            <option value="7">Rau mùi</option>
-            <!-- <option value="c++" disabled>C++</option>
-            <option value="java" selected>Java</option> -->
+            <option value="1">Trong nhà / Văn phòng</option>
+            <option value="2">Nhà máy / Khu công nghiệp</option>
+            <option value="3">Ngoài trời</option>
+            <option value="4">Bệnh viện / Phòng sạch</option>
+            <option value="5">Trường học</option>
+            <option value="6">Khu dân cư</option>
+            <option value="7">Khu thương mại</option>
           </select>
           <h4>Ngưỡng nhiệt độ môi trường (*C) </h4>
           <p style="font-size: 10px;">🌞Ngưỡng 1 &lt; Khoảng an toàn &lt; Ngưỡng 2</p>
@@ -150,12 +149,20 @@ const char index_html[] PROGMEM = R"rawliteral(
           
 
 
-          <h4>Ngưỡng độ ẩm đất (%)</h4>
-          <p style="font-size: 10px;">🍁Ngưỡng 1 &lt; Khoảng an toàn &lt; Ngưỡng 2</p>
-   
+          <h4>Ngưỡng bụi mịn PM2.5 (ug/m3)</h4>
+          <p style="font-size: 10px;">🌫️Ngưỡng 1 &lt; Khoảng an toàn &lt; Ngưỡng 2</p>
+ 
           <div class="container-2">
-            <input class="soilThre" type="number" id="soilMoistureThreshold1" name="soilMoistureThreshold1"  placeholder="Ngưỡng 1">
-            <input class="soilThre" type="number" id="soilMoistureThreshold2" name="soilMoistureThreshold2"  placeholder="Ngưỡng 2">  
+            <input class="dustThre" type="number" id="dustThreshold1" name="dustThreshold1" min="0" max="500" step="1" placeholder="Ngưỡng 1">
+            <input class="dustThre" type="number" id="dustThreshold2" name="dustThreshold2" min="0" max="500" step="1" placeholder="Ngưỡng 2">  
+          </div>
+
+          <h4>Ngưỡng MQ135 Gas Ratio</h4>
+          <p style="font-size: 10px;">💨Ngưỡng 1 &lt; Khoảng an toàn &lt; Ngưỡng 2</p>
+ 
+          <div class="container-2">
+            <input class="mq135Thre" type="number" id="mq135Threshold1" name="mq135Threshold1" min="0" max="100" step="0.1" placeholder="Ngưỡng 1">
+            <input class="mq135Thre" type="number" id="mq135Threshold2" name="mq135Threshold2" min="0" max="100" step="0.1" placeholder="Ngưỡng 2">  
           </div>
 
       
@@ -181,8 +188,10 @@ const char index_html[] PROGMEM = R"rawliteral(
           tempThreshold2 : "",
           humiThreshold1 : "",
           humiThreshold2 : "",
-          soilMoistureThreshold1 : "",
-          soilMoistureThreshold2 : "",
+          dustThreshold1 : "",
+          dustThreshold2 : "",
+          mq135Threshold1 : "",
+          mq135Threshold2 : "",
     };
      const ssid        = document.getElementById("ssid");
      const pass        = document.getElementById("pass");
@@ -196,25 +205,38 @@ const char index_html[] PROGMEM = R"rawliteral(
     const humiThreshold1 = document.getElementsByName('humiThreshold1')[0];
     const humiThreshold2 = document.getElementsByName('humiThreshold2')[0];
 
-    const soilMoistureThreshold1 = document.getElementsByName('soilMoistureThreshold1')[0];
-    const soilMoistureThreshold2 = document.getElementsByName('soilMoistureThreshold2')[0];
+    const dustThreshold1 = document.getElementsByName('dustThreshold1')[0];
+    const dustThreshold2 = document.getElementsByName('dustThreshold2')[0];
 
-    // Khởi tạo các giá trị ngưỡng của thực vật
-    function PLANT(tempThreshold1, tempThreshold2, humiThreshold1, humiThreshold2, soilMoistureThreshold1, soilMoistureThreshold2) {
+    const mq135Threshold1 = document.getElementsByName('mq135Threshold1')[0];
+    const mq135Threshold2 = document.getElementsByName('mq135Threshold2')[0];
+
+    // Khởi tạo các giá trị ngưỡng của môi trường
+    // Format: PLANT(tempThreshold1, tempThreshold2, humiThreshold1, humiThreshold2, dustThreshold1, dustThreshold2, mq135Threshold1, mq135Threshold2)
+    function PLANT(tempThreshold1, tempThreshold2, humiThreshold1, humiThreshold2, dustThreshold1, dustThreshold2, mq135Threshold1, mq135Threshold2) {
         this.tempThreshold1 = tempThreshold1;
         this.tempThreshold2 = tempThreshold2;
         this.humiThreshold1 = humiThreshold1;
         this.humiThreshold2 = humiThreshold2;
-        this.soilMoistureThreshold1 = soilMoistureThreshold1;
-        this.soilMoistureThreshold2 = soilMoistureThreshold2;
+        this.dustThreshold1 = dustThreshold1;
+        this.dustThreshold2 = dustThreshold2;
+        this.mq135Threshold1 = mq135Threshold1;
+        this.mq135Threshold2 = mq135Threshold2;
     }
-    raumam   = new PLANT(20,25,50,70,60,80);
-    bapcai   = new PLANT(15,21,60,80,60,80);
-    cachua   = new PLANT(15,25,60,80,60,80);
-    xalach   = new PLANT(15,20,60,80,60,80);
-    duachuot = new PLANT(20,25,60,80,60,80);
-    senda    = new PLANT(15,25,30,50,30,50);
-    raumui   = new PLANT(15,20,50,70,60,80);
+    // 1. Trong nhà / Văn phòng: Nhiệt độ 20-25°C, Độ ẩm 40-60%, PM2.5 0-35, MQ135 0-1.0
+    trongnha = new PLANT(20, 25, 40, 60, 0, 35, 0, 1.0);
+    // 2. Nhà máy / Khu công nghiệp: Nhiệt độ 15-30°C, Độ ẩm 30-70%, PM2.5 0-75, MQ135 0-2.0
+    nhamay = new PLANT(15, 30, 30, 70, 0, 75, 0, 2.0);
+    // 3. Ngoài trời: Nhiệt độ -10-40°C, Độ ẩm 20-90%, PM2.5 0-50, MQ135 0-1.5
+    ngoaitroi = new PLANT(-10, 40, 20, 90, 0, 50, 0, 1.5);
+    // 4. Bệnh viện / Phòng sạch: Nhiệt độ 22-24°C, Độ ẩm 45-55%, PM2.5 0-15, MQ135 0-0.5
+    benhvien = new PLANT(22, 24, 45, 55, 0, 15, 0, 0.5);
+    // 5. Trường học: Nhiệt độ 20-26°C, Độ ẩm 40-60%, PM2.5 0-35, MQ135 0-1.0
+    truonghoc = new PLANT(20, 26, 40, 60, 0, 35, 0, 1.0);
+    // 6. Khu dân cư: Nhiệt độ 18-28°C, Độ ẩm 40-70%, PM2.5 0-50, MQ135 0-1.2
+    khudancu = new PLANT(18, 28, 40, 70, 0, 50, 0, 1.2);
+    // 7. Khu thương mại: Nhiệt độ 20-26°C, Độ ẩm 40-65%, PM2.5 0-40, MQ135 0-1.5
+    khuthuongmai = new PLANT(20, 26, 40, 65, 0, 40, 0, 1.5);
     
     // lấy data ban đầu
     var xhttp = new XMLHttpRequest();
@@ -234,10 +256,12 @@ const char index_html[] PROGMEM = R"rawliteral(
         tempThreshold2.value = obj.tempThreshold2;
         humiThreshold1.value = obj.humiThreshold1;
         humiThreshold2.value = obj.humiThreshold2;
-        soilMoistureThreshold1.value = obj.soilMoistureThreshold1;
-        soilMoistureThreshold2.value = obj.soilMoistureThreshold2;
+        dustThreshold1.value = obj.dustThreshold1;
+        dustThreshold2.value = obj.dustThreshold2;
+        mq135Threshold1.value = obj.mq135Threshold1;
+        mq135Threshold2.value = obj.mq135Threshold2;
 
-        // Gán giá trị cây trồng ban đầu
+        // Gán giá trị môi trường ban đầu
         document.getElementById("caytrong").options.selectedIndex = Number(obj.typePlant);
         checkPlantAndPutValue(Number(obj.typePlant));
       }
@@ -251,78 +275,96 @@ const char index_html[] PROGMEM = R"rawliteral(
       checkPlantAndPutValue(index);
     }
 
-    // hiển thị các giá trị ngưỡng tương ứng lên textbox khi người dùng chọn loại cây trồng
+    // hiển thị các giá trị ngưỡng tương ứng lên textbox khi người dùng chọn loại môi trường
     function checkPlantAndPutValue(value) {
         if(value === 0) {
           document.getElementById("tempThreshold1").disabled = false;
           document.getElementById("tempThreshold2").disabled = false;
           document.getElementById("humiThreshold1").disabled = false;
           document.getElementById("humiThreshold2").disabled = false;
-          document.getElementById("soilMoistureThreshold1").disabled = false;
-          document.getElementById("soilMoistureThreshold2").disabled = false;
+          document.getElementById("dustThreshold1").disabled = false;
+          document.getElementById("dustThreshold2").disabled = false;
+          document.getElementById("mq135Threshold1").disabled = false;
+          document.getElementById("mq135Threshold2").disabled = false;
         } else {
           document.getElementById("tempThreshold1").disabled = true;
           document.getElementById("tempThreshold2").disabled = true;
           document.getElementById("humiThreshold1").disabled = true;
           document.getElementById("humiThreshold2").disabled = true;
-          document.getElementById("soilMoistureThreshold1").disabled = true;
-          document.getElementById("soilMoistureThreshold2").disabled = true;
+          document.getElementById("dustThreshold1").disabled = true;
+          document.getElementById("dustThreshold2").disabled = true;
+          document.getElementById("mq135Threshold1").disabled = true;
+          document.getElementById("mq135Threshold2").disabled = true;
           switch (value) {
-            case 1:
-              tempThreshold1.value = raumam.tempThreshold1;
-              tempThreshold2.value = raumam.tempThreshold2;
-              humiThreshold1.value = raumam.humiThreshold1;
-              humiThreshold2.value = raumam.humiThreshold2;
-              soilMoistureThreshold1.value = raumam.soilMoistureThreshold1;
-              soilMoistureThreshold2.value = raumam.soilMoistureThreshold2;
+            case 1: // Trong nhà / Văn phòng
+              tempThreshold1.value = trongnha.tempThreshold1;
+              tempThreshold2.value = trongnha.tempThreshold2;
+              humiThreshold1.value = trongnha.humiThreshold1;
+              humiThreshold2.value = trongnha.humiThreshold2;
+              dustThreshold1.value = trongnha.dustThreshold1;
+              dustThreshold2.value = trongnha.dustThreshold2;
+              mq135Threshold1.value = trongnha.mq135Threshold1;
+              mq135Threshold2.value = trongnha.mq135Threshold2;
               break;
-            case 2:
-              tempThreshold1.value = bapcai.tempThreshold1;
-              tempThreshold2.value = bapcai.tempThreshold2;
-              humiThreshold1.value = bapcai.humiThreshold1;
-              humiThreshold2.value = bapcai.humiThreshold2;
-              soilMoistureThreshold1.value = bapcai.soilMoistureThreshold1;
-              soilMoistureThreshold2.value = bapcai.soilMoistureThreshold2;
+            case 2: // Nhà máy / Khu công nghiệp
+              tempThreshold1.value = nhamay.tempThreshold1;
+              tempThreshold2.value = nhamay.tempThreshold2;
+              humiThreshold1.value = nhamay.humiThreshold1;
+              humiThreshold2.value = nhamay.humiThreshold2;
+              dustThreshold1.value = nhamay.dustThreshold1;
+              dustThreshold2.value = nhamay.dustThreshold2;
+              mq135Threshold1.value = nhamay.mq135Threshold1;
+              mq135Threshold2.value = nhamay.mq135Threshold2;
               break;
-            case 3:
-              tempThreshold1.value = cachua.tempThreshold1;
-              tempThreshold2.value = cachua.tempThreshold2;
-              humiThreshold1.value = cachua.humiThreshold1;
-              humiThreshold2.value = cachua.humiThreshold2;
-              soilMoistureThreshold1.value = cachua.soilMoistureThreshold1;
-              soilMoistureThreshold2.value = cachua.soilMoistureThreshold2;
+            case 3: // Ngoài trời
+              tempThreshold1.value = ngoaitroi.tempThreshold1;
+              tempThreshold2.value = ngoaitroi.tempThreshold2;
+              humiThreshold1.value = ngoaitroi.humiThreshold1;
+              humiThreshold2.value = ngoaitroi.humiThreshold2;
+              dustThreshold1.value = ngoaitroi.dustThreshold1;
+              dustThreshold2.value = ngoaitroi.dustThreshold2;
+              mq135Threshold1.value = ngoaitroi.mq135Threshold1;
+              mq135Threshold2.value = ngoaitroi.mq135Threshold2;
               break;
-            case 4:
-              tempThreshold1.value = xalach.tempThreshold1;
-              tempThreshold2.value = xalach.tempThreshold2;
-              humiThreshold1.value = xalach.humiThreshold1;
-              humiThreshold2.value = xalach.humiThreshold2;
-              soilMoistureThreshold1.value = xalach.soilMoistureThreshold1;
-              soilMoistureThreshold2.value = xalach.soilMoistureThreshold2;
+            case 4: // Bệnh viện / Phòng sạch
+              tempThreshold1.value = benhvien.tempThreshold1;
+              tempThreshold2.value = benhvien.tempThreshold2;
+              humiThreshold1.value = benhvien.humiThreshold1;
+              humiThreshold2.value = benhvien.humiThreshold2;
+              dustThreshold1.value = benhvien.dustThreshold1;
+              dustThreshold2.value = benhvien.dustThreshold2;
+              mq135Threshold1.value = benhvien.mq135Threshold1;
+              mq135Threshold2.value = benhvien.mq135Threshold2;
               break;
-            case 5:
-              tempThreshold1.value = duachuot.tempThreshold1;
-              tempThreshold2.value = duachuot.tempThreshold2;
-              humiThreshold1.value = duachuot.humiThreshold1;
-              humiThreshold2.value = duachuot.humiThreshold2;
-              soilMoistureThreshold1.value = duachuot.soilMoistureThreshold1;
-              soilMoistureThreshold2.value = duachuot.soilMoistureThreshold2;
+            case 5: // Trường học
+              tempThreshold1.value = truonghoc.tempThreshold1;
+              tempThreshold2.value = truonghoc.tempThreshold2;
+              humiThreshold1.value = truonghoc.humiThreshold1;
+              humiThreshold2.value = truonghoc.humiThreshold2;
+              dustThreshold1.value = truonghoc.dustThreshold1;
+              dustThreshold2.value = truonghoc.dustThreshold2;
+              mq135Threshold1.value = truonghoc.mq135Threshold1;
+              mq135Threshold2.value = truonghoc.mq135Threshold2;
               break;
-            case 6:
-              tempThreshold1.value = senda.tempThreshold1;
-              tempThreshold2.value = senda.tempThreshold2;
-              humiThreshold1.value = senda.humiThreshold1;
-              humiThreshold2.value = senda.humiThreshold2;
-              soilMoistureThreshold1.value = senda.soilMoistureThreshold1;
-              soilMoistureThreshold2.value = senda.soilMoistureThreshold2;
+            case 6: // Khu dân cư
+              tempThreshold1.value = khudancu.tempThreshold1;
+              tempThreshold2.value = khudancu.tempThreshold2;
+              humiThreshold1.value = khudancu.humiThreshold1;
+              humiThreshold2.value = khudancu.humiThreshold2;
+              dustThreshold1.value = khudancu.dustThreshold1;
+              dustThreshold2.value = khudancu.dustThreshold2;
+              mq135Threshold1.value = khudancu.mq135Threshold1;
+              mq135Threshold2.value = khudancu.mq135Threshold2;
               break;
-            case 7:
-              tempThreshold1.value = raumui.tempThreshold1;
-              tempThreshold2.value = raumui.tempThreshold2;
-              humiThreshold1.value = raumui.humiThreshold1;
-              humiThreshold2.value = raumui.humiThreshold2;
-              soilMoistureThreshold1.value = raumui.soilMoistureThreshold1;
-              soilMoistureThreshold2.value = raumui.soilMoistureThreshold2;
+            case 7: // Khu thương mại
+              tempThreshold1.value = khuthuongmai.tempThreshold1;
+              tempThreshold2.value = khuthuongmai.tempThreshold2;
+              humiThreshold1.value = khuthuongmai.humiThreshold1;
+              humiThreshold2.value = khuthuongmai.humiThreshold2;
+              dustThreshold1.value = khuthuongmai.dustThreshold1;
+              dustThreshold2.value = khuthuongmai.dustThreshold2;
+              mq135Threshold1.value = khuthuongmai.mq135Threshold1;
+              mq135Threshold2.value = khuthuongmai.mq135Threshold2;
               break;
           }
         }
@@ -342,8 +384,10 @@ const char index_html[] PROGMEM = R"rawliteral(
           tempThreshold2 : Number(tempThreshold2.value),
           humiThreshold1 : Number(humiThreshold1.value),
           humiThreshold2 : Number(humiThreshold2.value),
-          soilMoistureThreshold1 : Number(soilMoistureThreshold1.value),
-          soilMoistureThreshold2 : Number(soilMoistureThreshold2.value)
+          dustThreshold1 : Number(dustThreshold1.value),
+          dustThreshold2 : Number(dustThreshold2.value),
+          mq135Threshold1 : Number(mq135Threshold1.value),
+          mq135Threshold2 : Number(mq135Threshold2.value)
         }
         
         xhttp2.open("POST","/post_data", true),

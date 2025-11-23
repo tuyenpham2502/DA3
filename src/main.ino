@@ -25,9 +25,15 @@ char BLYNK_AUTH_TOKEN[32]   =   "";
 #include <PubSubClient.h>
 
 // MQTT broker details
-const int mqtt_port = 2000; // MQTT port
+const int mqtt_port = 1883; // MQTT port
 WiFiClient espClient;
 PubSubClient client(espClient);
+
+String device_id = "";
+void loadDeviceId() {
+  // Gán cứng device_id theo yêu cầu
+  device_id = "dv-01";
+}
 
 // Define ENABLE, DISABLE, and RELAY here to ensure they are globally accessible
 #define ENABLE    1
@@ -48,9 +54,14 @@ typedef enum {
   SCREEN10,
   SCREEN11,
   SCREEN12,
-  SCREEN13
+  SCREEN13,
+  SCREEN14,
+  SCREEN15,
+  SCREEN_DUST,
+  SCREEN_MQ135
 }SCREEN;
 int screenOLED = SCREEN0;
+// #define SCREEN_MQ135 14  // Xóa dòng này để tránh trùng giá trị enum
 
 bool enableShow = DISABLE;
 bool autoWarning = DISABLE;
@@ -60,11 +71,11 @@ void connectMQTT() {
   client.setCallback(mqttCallback); // Set MQTT callback
   while (!client.connected()) {
     Serial.print("Connecting to MQTT...");
-    if (client.connect("ESP32Client")) {
+    if (client.connect(device_id.c_str())) {
       Serial.println("connected");
-      client.subscribe("esp32/thresholds"); // Subscribe to thresholds topic
-      client.subscribe("esp32/relay/control"); // Subscribe to relay control topic
-      client.subscribe("esp32/autoWarning/control"); // Subscribe to autoWarning control topic
+      client.subscribe(("esp32/" + device_id + "/thresholds").c_str());
+      client.subscribe(("esp32/" + device_id + "/relay/control").c_str());
+      client.subscribe(("esp32/" + device_id + "/autoWarning/control").c_str());
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -78,18 +89,131 @@ void connectMQTT() {
 void publishSensorData() {
   extern float tempValue;
   extern int humiValue;
-  extern int soilMoistureValue;
-  String payload = String("{\"temperature\": ") + String(tempValue) + String(", \"humidity\": ") + String(humiValue) + String(", \"soilMoisture\": ") + String(soilMoistureValue) + String("}");
-  client.publish("esp32/sensors", payload.c_str());
+  extern int dustValue;
+  extern int mq135Value;
+  extern float mq135Rs;
+  extern float mq135GasRatio;
+  String payload = String("{\"temperature\": ") + String(tempValue) +
+                   String(", \"humidity\": ") + String(humiValue) +
+                   String(", \"dust\": ") + String(dustValue) +
+                   String(", \"mq135_ratio\": ") + String(mq135GasRatio, 2) + String("}");
+  client.publish(("esp32/" + device_id + "/sensors").c_str(), payload.c_str());
 }
 
 // Function to publish autoWarning and RELAY status
 void publishStatusData() {
-  String payload = String("{\"autoWarning\": ") + String(autoWarning) + String(", \"relayState\": ") + String(digitalRead(RELAY)) + String("}");
-  client.publish("esp32/status", payload.c_str());
+  // Read current value from variable to ensure we publish the correct value
+  int currentAutoWarning = autoWarning;
+  Serial.print("Publishing status - current autoWarning value: ");
+  Serial.println(currentAutoWarning);
+  
+  String payload = String("{\"autoWarning\": ") + String(currentAutoWarning) + String(", \"relayState\": ") + String(digitalRead(RELAY)) + String("}");
+  Serial.print("Publishing status to topic: esp32/");
+  Serial.print(device_id);
+  Serial.println("/status");
+  Serial.print("Payload: ");
+  Serial.println(payload);
+  bool published = client.publish(("esp32/" + device_id + "/status").c_str(), payload.c_str());
+  if (published) {
+    Serial.println("Status published successfully");
+  } else {
+    Serial.println("Failed to publish status");
+  }
+}
+
+// Function to publish autoWarning state immediately when changed
+void publishAutoWarning() {
+  // Read current value from variable to ensure we publish the correct value
+  int currentValue = autoWarning;
+  Serial.print("Publishing autoWarning - current variable value: ");
+  Serial.println(currentValue);
+  
+  String payload = String("{\"autoWarning\": ") + String(currentValue) + String("}");
+  Serial.print("Publishing autoWarning to topic: esp32/");
+  Serial.print(device_id);
+  Serial.println("/autoWarning/state");
+  Serial.print("Payload: ");
+  Serial.println(payload);
+  bool published = client.publish(("esp32/" + device_id + "/autoWarning/state").c_str(), payload.c_str());
+  if (published) {
+    Serial.print("Published autoWarning successfully: ");
+    Serial.println(currentValue);
+  } else {
+    Serial.println("Failed to publish autoWarning");
+  }
+}
+
+// Function to publish threshold data
+void publishThresholdData() {
+  // Debug: Print current threshold values before publishing
+  Serial.println("Publishing threshold data:");
+  Serial.print("  tempThreshold1 = "); Serial.println(EtempThreshold1);
+  Serial.print("  tempThreshold2 = "); Serial.println(EtempThreshold2);
+  Serial.print("  humiThreshold1 = "); Serial.println(EhumiThreshold1);
+  Serial.print("  humiThreshold2 = "); Serial.println(EhumiThreshold2);
+  Serial.print("  dustThreshold1 = "); Serial.println(EdustThreshold1);
+  Serial.print("  dustThreshold2 = "); Serial.println(EdustThreshold2);
+  Serial.print("  mq135Threshold1 = "); Serial.println(Emq135Threshold1);
+  Serial.print("  mq135Threshold2 = "); Serial.println(Emq135Threshold2);
+  Serial.print("  typePlant = "); Serial.println(EtypePlant);
+  
+  String payload = String("{\"tempThreshold1\": ") + String(EtempThreshold1) +
+                   String(", \"tempThreshold2\": ") + String(EtempThreshold2) +
+                   String(", \"humiThreshold1\": ") + String(EhumiThreshold1) +
+                   String(", \"humiThreshold2\": ") + String(EhumiThreshold2) +
+                   String(", \"dustThreshold1\": ") + String(EdustThreshold1) +
+                   String(", \"dustThreshold2\": ") + String(EdustThreshold2) +
+                   String(", \"mq135Threshold1\": ") + String(Emq135Threshold1) +
+                   String(", \"mq135Threshold2\": ") + String(Emq135Threshold2) +
+                   String(", \"typePlant\": ") + String(EtypePlant) + String("}");
+  
+  Serial.print("Publishing payload: ");
+  Serial.println(payload);
+  
+  // Publish to separate topic to avoid triggering callback on the same topic we subscribe to
+  bool published = client.publish(("esp32/" + device_id + "/thresholds/current").c_str(), payload.c_str());
+  if (published) {
+    Serial.println("Threshold data published successfully");
+  } else {
+    Serial.println("Failed to publish threshold data");
+  }
 }
 
 #include "icon.h"
+
+// Helper function to safely parse integer from JSON
+int parseJsonInt(JSONVar obj, const char* key) {
+  if (!obj.hasOwnProperty(key)) return -1;
+  JSONVar val = obj[key];
+  // Try to parse as double first (more reliable), then convert to int
+  double dval = (double)val;
+  // Round to nearest integer
+  int ival;
+  if (dval >= 0) {
+    ival = (int)(dval + 0.5);
+  } else {
+    ival = (int)(dval - 0.5);
+  }
+  return ival;
+}
+
+// Helper function to update threshold value
+bool updateThresholdValue(int& threshold, int val, const char* name) {
+  if (val >= 0 && val <= 255) {
+    threshold = val;
+    Serial.print("Updated ");
+    Serial.print(name);
+    Serial.print(" = ");
+    Serial.println(threshold);
+    return true;
+  } else {
+    Serial.print("Invalid ");
+    Serial.print(name);
+    Serial.print(" value (must be 0-255): ");
+    Serial.println(val);
+    return false;
+  }
+}
 
 // MQTT callback function
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -99,52 +223,186 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   for (unsigned int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
+  Serial.print("Received message: ");
+  Serial.println(message);
   JSONVar myObject = JSON.parse(message);
   if (JSON.typeof(myObject) == "undefined") {
     Serial.println("Invalid JSON received");
     return;
   }
-  if (String(topic) == "esp32/thresholds") {
-    if (myObject.hasOwnProperty("tempThreshold1"))
-      EtempThreshold1 = (int)myObject["tempThreshold1"];
-    if (myObject.hasOwnProperty("tempThreshold2"))
-      EtempThreshold2 = (int)myObject["tempThreshold2"];
-    if (myObject.hasOwnProperty("humiThreshold1"))
-      EhumiThreshold1 = (int)myObject["humiThreshold1"];
-    if (myObject.hasOwnProperty("humiThreshold2"))
-      EhumiThreshold2 = (int)myObject["humiThreshold2"];
-    if (myObject.hasOwnProperty("soilMoistureThreshold1"))
-      EsoilMoistureThreshold1 = (int)myObject["soilMoistureThreshold1"];
-    if (myObject.hasOwnProperty("soilMoistureThreshold2"))
-      EsoilMoistureThreshold2 = (int)myObject["soilMoistureThreshold2"];
-    writeEEPROM(); // Save updated thresholds to EEPROM
-    Serial.println("Thresholds updated via MQTT");
-    delay(1000); // Ensure all operations complete before reset
-    ESP.restart(); // Reset the device
-  } 
-  else if (String(topic) == "esp32/autoWarning/control") {
-    Serial.println("Received autoWarning control message");
-    if (myObject.hasOwnProperty("autoWarningState")) {
-      Serial.print("autoWarningState received: ");
-      Serial.println((int)myObject["autoWarningState"]);
-      int state = (int)myObject["autoWarningState"];
-      if (state == 1 || state == 0) {
-        autoWarning = state;
-        EEPROM.write(210, autoWarning);
-        EEPROM.commit();
-        Serial.print("Auto Warning set to: ");
-        Serial.println(autoWarning == 1 ? "ENABLE" : "DISABLE");
-        enableShow = DISABLE;
-        if (autoWarning == 0) screenOLED = SCREEN11;
-        else screenOLED = SCREEN10;
-      } else {
-        Serial.println("Invalid autoWarningState value received (must be 0 or 1)");
+  if (String(topic) == ("esp32/" + device_id + "/thresholds")) {
+    Serial.println("Processing thresholds update from MQTT...");
+    bool updated = false;
+    
+    // Support both old format (tempThreshold1/tempThreshold2) and new format (temperatureMin/temperatureMax)
+    // Temperature
+    if (myObject.hasOwnProperty("temperatureMin") || myObject.hasOwnProperty("tempThreshold1")) {
+      int val = myObject.hasOwnProperty("temperatureMin") ? 
+                parseJsonInt(myObject, "temperatureMin") : 
+                parseJsonInt(myObject, "tempThreshold1");
+      Serial.print("Parsed temperatureMin/tempThreshold1 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(EtempThreshold1, val, "tempThreshold1")) {
+        updated = true;
+      }
+    }
+    
+    if (myObject.hasOwnProperty("temperatureMax") || myObject.hasOwnProperty("tempThreshold2")) {
+      int val = myObject.hasOwnProperty("temperatureMax") ? 
+                parseJsonInt(myObject, "temperatureMax") : 
+                parseJsonInt(myObject, "tempThreshold2");
+      Serial.print("Parsed temperatureMax/tempThreshold2 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(EtempThreshold2, val, "tempThreshold2")) {
+        updated = true;
+      }
+    }
+    
+    // Humidity
+    if (myObject.hasOwnProperty("humidityMin") || myObject.hasOwnProperty("humiThreshold1")) {
+      int val = myObject.hasOwnProperty("humidityMin") ? 
+                parseJsonInt(myObject, "humidityMin") : 
+                parseJsonInt(myObject, "humiThreshold1");
+      Serial.print("Parsed humidityMin/humiThreshold1 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(EhumiThreshold1, val, "humiThreshold1")) {
+        updated = true;
+      }
+    }
+    
+    if (myObject.hasOwnProperty("humidityMax") || myObject.hasOwnProperty("humiThreshold2")) {
+      int val = myObject.hasOwnProperty("humidityMax") ? 
+                parseJsonInt(myObject, "humidityMax") : 
+                parseJsonInt(myObject, "humiThreshold2");
+      Serial.print("Parsed humidityMax/humiThreshold2 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(EhumiThreshold2, val, "humiThreshold2")) {
+        updated = true;
+      }
+    }
+    
+    // Dust
+    if (myObject.hasOwnProperty("dustMin") || myObject.hasOwnProperty("dustThreshold1")) {
+      int val = myObject.hasOwnProperty("dustMin") ? 
+                parseJsonInt(myObject, "dustMin") : 
+                parseJsonInt(myObject, "dustThreshold1");
+      Serial.print("Parsed dustMin/dustThreshold1 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(EdustThreshold1, val, "dustThreshold1")) {
+        updated = true;
+      }
+    }
+    
+    if (myObject.hasOwnProperty("dustMax") || myObject.hasOwnProperty("dustThreshold2")) {
+      int val = myObject.hasOwnProperty("dustMax") ? 
+                parseJsonInt(myObject, "dustMax") : 
+                parseJsonInt(myObject, "dustThreshold2");
+      Serial.print("Parsed dustMax/dustThreshold2 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(EdustThreshold2, val, "dustThreshold2")) {
+        updated = true;
+      }
+    }
+    
+    // MQ135
+    if (myObject.hasOwnProperty("mq135Min") || myObject.hasOwnProperty("mq135Threshold1")) {
+      int val = myObject.hasOwnProperty("mq135Min") ? 
+                parseJsonInt(myObject, "mq135Min") : 
+                parseJsonInt(myObject, "mq135Threshold1");
+      Serial.print("Parsed mq135Min/mq135Threshold1 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(Emq135Threshold1, val, "mq135Threshold1")) {
+        updated = true;
+      }
+    }
+    
+    if (myObject.hasOwnProperty("mq135Max") || myObject.hasOwnProperty("mq135Threshold2")) {
+      int val = myObject.hasOwnProperty("mq135Max") ? 
+                parseJsonInt(myObject, "mq135Max") : 
+                parseJsonInt(myObject, "mq135Threshold2");
+      Serial.print("Parsed mq135Max/mq135Threshold2 from MQTT: ");
+      Serial.println(val);
+      if (updateThresholdValue(Emq135Threshold2, val, "mq135Threshold2")) {
+        updated = true;
+      }
+    }
+    
+    if (updated) {
+      Serial.println("All thresholds after update (before saving):");
+      printValueSetup();
+      writeEEPROM(); // Save updated thresholds to EEPROM
+      Serial.println("Thresholds updated and saved to EEPROM via MQTT");
+      Serial.println("Device will continue running with new thresholds (no restart needed)");
+      
+      // Publish updated thresholds to confirm the change
+      if (client.connected()) {
+        publishThresholdData();
       }
     } else {
-      Serial.println("Missing 'autoWarningState' in MQTT payload");
+      Serial.println("No valid thresholds to update");
     }
   }
-  else if (String(topic) == "esp32/relay/control") {
+  else if (String(topic) == ("esp32/" + device_id + "/autoWarning/control")) {
+    Serial.println("Received autoWarning control message");
+    int state = -1;
+    
+    // Backend sends "autoWarning" field with value 0 or 1
+    // Also support legacy format "autoWarningState" for backward compatibility
+    if (myObject.hasOwnProperty("autoWarning")) {
+      state = parseJsonInt(myObject, "autoWarning");
+      Serial.print("Parsed autoWarning from MQTT: ");
+      Serial.println(state);
+    } else if (myObject.hasOwnProperty("autoWarningState")) {
+      state = parseJsonInt(myObject, "autoWarningState");
+      Serial.print("Parsed autoWarningState from MQTT (legacy format): ");
+      Serial.println(state);
+    } else {
+      Serial.println("Missing 'autoWarning' or 'autoWarningState' in MQTT payload");
+      Serial.print("Available keys in message: ");
+      // Print available keys for debugging
+      JSONVar keys = myObject.keys();
+      for (int i = 0; i < keys.length(); i++) {
+        Serial.print((const char*)keys[i]);
+        if (i < keys.length() - 1) Serial.print(", ");
+      }
+      Serial.println();
+      return;
+    }
+    
+    // Validate and update autoWarning state
+    if (state == 1 || state == 0) {
+      int oldState = autoWarning;
+      autoWarning = state;
+      Serial.print("Writing autoWarning to EEPROM: ");
+      Serial.println(autoWarning);
+      EEPROM.write(210, (byte)(autoWarning & 0xFF));
+      EEPROM.commit();
+      
+      // Verify by reading back
+      int readBack = (int)((unsigned char)EEPROM.read(210));
+      Serial.print("Read back autoWarning from EEPROM: ");
+      Serial.println(readBack);
+      
+      Serial.print("Auto Warning changed from ");
+      Serial.print(oldState == 1 ? "ENABLE" : "DISABLE");
+      Serial.print(" to ");
+      Serial.println(autoWarning == 1 ? "ENABLE" : "DISABLE");
+      
+      enableShow = DISABLE;
+      if (autoWarning == 0) screenOLED = SCREEN11;
+      else screenOLED = SCREEN10;
+      
+      // Publish autoWarning state immediately when changed via MQTT
+      if (client.connected()) {
+        publishAutoWarning();
+      }
+    } else {
+      Serial.print("Invalid autoWarning value received (must be 0 or 1, got: ");
+      Serial.print(state);
+      Serial.println(")");
+    }
+  }
+  else if (String(topic) == ("esp32/" + device_id + "/relay/control")) {
     if (myObject.hasOwnProperty("relayState")) {
       int relayState = (int)myObject["relayState"];
       if (relayState == 1) {
@@ -192,7 +450,8 @@ Adafruit_SH1106G oled = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLE
 #define HAPPY  2
 int warningTempState = SAD;
 int warningHumiState = NORMAL;
-int warningSoilMoistureState = HAPPY;
+int warningDustState = NORMAL;
+int warningMQ135State = NORMAL;
 
 // --------------------- Cảm biến DHT11 ---------------------
 #include "DHT.h"
@@ -204,9 +463,28 @@ int humiValue   = 60;
 SimpleKalmanFilter tempfilter(2, 2, 0.001);
 SimpleKalmanFilter humifilter(2, 2, 0.001);
 bool dht11ReadOK = true;
-// ----------------------------- Khai báo cảm biến độ ẩm đất ------------------------------------
-#define SOIL_MOISTURE 39
-int soilMoistureValue = 0;
+
+// -------------------- Khai báo cảm biến bụi --------------
+#include <GP2Y1010AU0F.h>
+#define DUST_TRIG             23
+#define DUST_ANALOG           36
+GP2Y1010AU0F dustSensor(DUST_TRIG, DUST_ANALOG);
+SimpleKalmanFilter dustfilter(2, 2, 0.001);
+int dustValue = 10;
+
+// -------------------- Khai báo cảm biến MQ135, MQ3, MQ5 -----------------
+#define MQ135_PIN 39
+#define MQ3_PIN   38
+#define MQ5_PIN   37
+int mq135Value = 0;
+int mq3Value = 0;
+int mq5Value = 0;
+float mq135GasRatio = 0.0;  // Tỷ lệ Rs/R0 - chỉ số chất lượng không khí (Ratio < 1.0 = tốt, > 1.0 = có khí độc)
+const float MQ135_RL = 10000.0; // Điện trở tải 10k Ohm
+const float MQ135_VCC = 3.3;    // Điện áp nguồn 3.3V
+const float MQ135_R0 = 10000.0; // Điện trở baseline trong không khí sạch (cần hiệu chuẩn)
+TaskHandle_t TaskMQ135Sensor_handle = NULL;
+
 // Khai báo LED
 #define LED           33
 // Khai báo BUZZER
@@ -232,13 +510,14 @@ void button_press_long_callback(uint8_t button_id);
 TaskHandle_t TaskButton_handle      = NULL;
 TaskHandle_t TaskOLEDDisplay_handle = NULL;
 TaskHandle_t TaskDHT11_handle = NULL;
-TaskHandle_t TaskSoilMoistureSensor_handle = NULL;
+TaskHandle_t TaskDustSensor_handle = NULL;
 TaskHandle_t TaskAutoWarning_handle = NULL;
 void setup(){
   Serial.begin(115200);
   // Đọc data setup từ eeprom
   EEPROM.begin(512);
   readEEPROM();
+  loadDeviceId();
   client.setServer(Emqtt_server.c_str(), mqtt_port);
     // Khởi tạo LED
   pinMode(LED, OUTPUT);
@@ -251,10 +530,21 @@ void setup(){
   oled.begin(i2c_Address, true);
   oled.setTextSize(2);
   oled.setTextColor(SH110X_WHITE);
+  // In device_id ra Serial để backend dễ lấy
+  Serial.print("DEVICE_ID: ");
+  Serial.println(device_id);
+
   // Khởi tạo DHT11
   dht.begin();
+  // Khai báo cảm biến bụi
+  dustSensor.begin();
   // ---------- Đọc giá trị AutoWarning trong EEPROM ----------------
-  autoWarning = EEPROM.read(210);
+  autoWarning = (int)((unsigned char)EEPROM.read(210));
+  Serial.print("Read autoWarning from EEPROM in setup: ");
+  Serial.println(autoWarning);
+  // Khởi tạo MQ135
+  pinMode(MQ135_PIN, INPUT);
+  xTaskCreatePinnedToCore(TaskMQ135Sensor, "TaskMQ135Sensor", 1024*8, NULL, 10, &TaskMQ135Sensor_handle, 1);
   // Khởi tạo nút nhấn
   pinMode(BUTTON_SET_PIN, INPUT_PULLUP);
   pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
@@ -268,23 +558,44 @@ void setup(){
   xTaskCreatePinnedToCore(TaskButton,          "TaskButton" ,          1024*10 ,  NULL,  20 ,  &TaskButton_handle       , 1);
   xTaskCreatePinnedToCore(TaskOLEDDisplay,     "TaskOLEDDisplay" ,     1024*16 ,  NULL,  20 ,  &TaskOLEDDisplay_handle  , 1);
   xTaskCreatePinnedToCore(TaskDHT11,           "TaskDHT11" ,           1024*10 ,  NULL,  10 ,  &TaskDHT11_handle  , 1);
-  xTaskCreatePinnedToCore(TaskSoilMoistureSensor,      "TaskSoilMoistureSensor" ,      1024*10 ,  NULL,  10 ,  &TaskSoilMoistureSensor_handle  , 1);
+  xTaskCreatePinnedToCore(TaskDustSensor,      "TaskDustSensor" ,      1024*10 ,  NULL,  10 ,  &TaskDustSensor_handle  , 1);
   xTaskCreatePinnedToCore(TaskAutoWarning,     "TaskAutoWarning" ,     1024*10 ,  NULL,  10  , &TaskAutoWarning_handle ,  1);
 
   // Kết nối wifi
   connectSTA();
 }
 
+unsigned long lastThresholdPublish = 0;
+const unsigned long THRESHOLD_PUBLISH_INTERVAL = 30000; // Publish threshold every 30 seconds
+
+unsigned long lastAutoWarningPublish = 0;
+const unsigned long AUTO_WARNING_PUBLISH_INTERVAL = 60000; // Publish autoWarning every 60 seconds
+
 void loop() {
   if (!client.connected()) {
     connectMQTT();
     screenOLED = SCREEN5; // Screen for failed MQTT connection
+    lastAutoWarningPublish = 0; // Reset timer when disconnected
   } else {
     screenOLED = SCREEN7; // Screen for successful MQTT connection
   }
   client.loop();
   publishSensorData();
   publishStatusData(); // Publish autoWarning and RELAY status
+  
+  // Publish threshold data every 30 seconds (thresholds don't change often)
+  unsigned long now = millis();
+  if (now - lastThresholdPublish >= THRESHOLD_PUBLISH_INTERVAL) {
+    publishThresholdData();
+    lastThresholdPublish = now;
+  }
+  
+  // Publish autoWarning state periodically (every 60 seconds)
+  if (client.connected() && (now - lastAutoWarningPublish >= AUTO_WARNING_PUBLISH_INTERVAL || lastAutoWarningPublish == 0)) {
+    publishAutoWarning();
+    lastAutoWarningPublish = now;
+  }
+  
   delay(5000);
 }
 
@@ -325,27 +636,25 @@ void TaskDHT11(void *pvParameters) {
     }
 }
 
-//---------------- Task đo cảm biến bụi ----------
-void TaskSoilMoistureSensor(void *pvParameters) {
+void TaskDustSensor(void *pvParameters) {
     while(1) {
-      soilMoistureValue = analogRead(SOIL_MOISTURE);
-      soilMoistureValue = 4095 - soilMoistureValue;
-      soilMoistureValue = map(soilMoistureValue, 0, 4095, 0, 100);
-      Serial.print("soilMoistureValue = ");
-      Serial.print(soilMoistureValue);
-      Serial.println(" %");
-      if(soilMoistureValue < EsoilMoistureThreshold1 || soilMoistureValue > EsoilMoistureThreshold2) 
-        warningSoilMoistureState = NORMAL;
-      else
-        warningSoilMoistureState = HAPPY;
+      dustValue = dustSensor.read();
+      dustValue = dustValue - 20;
+      if(dustValue <= 0)  dustValue = 0;
+      //dustValue = dustfilter.updateEstimate(dustValue);
+      Serial.print("Dust Density = ");
+      Serial.print(dustValue);
+      Serial.println(" ug/m3");
 
-      if(soilMoistureValue < EsoilMoistureThreshold1 - 10)
-         digitalWrite(RELAY, ENABLE);
-      else if(soilMoistureValue > EsoilMoistureThreshold1 + 10)
-         digitalWrite(RELAY, DISABLE);
-      delay(1000);
+      if(dustValue < EdustThreshold1 || dustValue > EdustThreshold2) 
+        warningDustState = NORMAL;
+      else
+        warningDustState = HAPPY;
+
+      delay(3000);
     }
 }
+
 
 // Xóa 1 ô hình chữ nhật từ tọa độ (x1,y1) đến (x2,y2)
 void clearRectangle(int x1, int y1, int x2, int y2) {
@@ -375,7 +684,63 @@ void TaskOLEDDisplay(void *pvParameters) {
           }
           screenOLED = SCREEN4;
           break;
-        case SCREEN1:   // Hiển thị nhiệt độ 
+        case SCREEN_DUST:   // Hiển thị bụi
+          for(int j = 0; j < 2 && enableShow == ENABLE; j++) {
+            oled.clearDisplay();
+            oled.setTextSize(1);
+            oled.setCursor(0, 20);
+            oled.print("Bui min PM2.5: ");
+            oled.setTextSize(2);
+            oled.setCursor(0, 32);
+            oled.print(dustValue);
+            oled.setTextSize(1);
+            oled.print(" ug/m3");
+          
+            for(int i = 0; i < FRAME_COUNT_face1OLED && enableShow == ENABLE; i++) {
+                  clearRectangle(96, 0, 128, 64);
+                  if(warningDustState == SAD)
+                    oled.drawBitmap(96, 20, face1OLED[i], 32, 32, 1);
+                  else if(warningDustState == NORMAL)
+                    oled.drawBitmap(96, 20, face2OLED[i], 32, 32, 1);
+                  else if(warningDustState == HAPPY)
+                    oled.drawBitmap(96, 20, face3OLED[i], 32, 32, 1);
+                  oled.display();
+                  delay(FRAME_DELAY);
+            }
+            oled.display();
+            delay(100);
+          }
+          if( enableShow == ENABLE)
+            screenOLED = SCREEN1;
+          break;
+        case SCREEN_MQ135:   // Hiển thị MQ135 Gas Ratio
+          for(int j = 0; j < 2 && enableShow == ENABLE; j++) {
+            oled.clearDisplay();
+            oled.setTextSize(1);
+            oled.setCursor(0, 20);
+            oled.print("MQ135 Ratio:");
+            oled.setTextSize(2);
+            oled.setCursor(0, 32);
+            oled.print(mq135GasRatio, 2);
+          
+            for(int i = 0; i < FRAME_COUNT_face1OLED && enableShow == ENABLE; i++) {
+                  clearRectangle(96, 0, 128, 64);
+                  if(warningMQ135State == SAD)
+                    oled.drawBitmap(96, 20, face1OLED[i], 32, 32, 1);
+                  else if(warningMQ135State == NORMAL)
+                    oled.drawBitmap(96, 20, face2OLED[i], 32, 32, 1);
+                  else if(warningMQ135State == HAPPY)
+                    oled.drawBitmap(96, 20, face3OLED[i], 32, 32, 1);
+                  oled.display();
+                  delay(FRAME_DELAY);
+            }
+            oled.display();
+            delay(100);
+          }
+          if( enableShow == ENABLE)
+            screenOLED = SCREEN1;
+          break;
+        case SCREEN1:   // Hiển thị nhiệt độ
           for(int j = 0; j < 2 && enableShow == ENABLE; j++) {
 
             oled.clearDisplay();
@@ -437,36 +802,93 @@ void TaskOLEDDisplay(void *pvParameters) {
             delay(100);
           }
           if( enableShow == ENABLE)
-            screenOLED = SCREEN3;
+            screenOLED = SCREEN14;
           break;
-        case SCREEN3:  // Hiển thị độ ẩm đất
+        case SCREEN14:  // Hiển thị Bụi trong chu trình chính
           for(int j = 0; j < 2 && enableShow == ENABLE; j++) {
             oled.clearDisplay();
             oled.setTextSize(1);
             oled.setCursor(0, 20);
-            oled.print("Do am dat: ");
+            oled.print("Bui min PM2.5: ");
             oled.setTextSize(2);
             oled.setCursor(0, 32);
-            oled.print(soilMoistureValue); 
-            oled.print(" %");  
-
+            oled.print(dustValue);
+            oled.setTextSize(1);
+            oled.print(" ug/m3");
+          
             for(int i = 0; i < FRAME_COUNT_face1OLED && enableShow == ENABLE; i++) {
-              clearRectangle(96, 0, 128, 64);
-              if(warningSoilMoistureState == SAD)
-                oled.drawBitmap(96, 20, face1OLED[i], 32, 32, 1);
-              else if(warningSoilMoistureState == NORMAL)
-                oled.drawBitmap(96, 20, face2OLED[i], 32, 32, 1);
-              else if(warningSoilMoistureState == HAPPY)
-                oled.drawBitmap(96, 20, face3OLED[i], 32, 32, 1);
-              oled.display();
-              delay(FRAME_DELAY);  
+                  clearRectangle(96, 0, 128, 64);
+                  if(warningDustState == SAD)
+                    oled.drawBitmap(96, 20, face1OLED[i], 32, 32, 1);
+                  else if(warningDustState == NORMAL)
+                    oled.drawBitmap(96, 20, face2OLED[i], 32, 32, 1);
+                  else if(warningDustState == HAPPY)
+                    oled.drawBitmap(96, 20, face3OLED[i], 32, 32, 1);
+                  oled.display();
+                  delay(FRAME_DELAY);
+            }
+            oled.display();
+            delay(100);
+          }
+          if( enableShow == ENABLE)
+            screenOLED = SCREEN15;
+          break;
+        case SCREEN15:  // Hiển thị MQ135 trong chu trình chính
+          for(int j = 0; j < 2 && enableShow == ENABLE; j++) {
+            oled.clearDisplay();
+            oled.setTextSize(1);
+            oled.setCursor(0, 20);
+            oled.print("MQ135 Ratio:");
+            oled.setTextSize(2);
+            oled.setCursor(0, 32);
+            oled.print(mq135GasRatio, 2);
+          
+            for(int i = 0; i < FRAME_COUNT_face1OLED && enableShow == ENABLE; i++) {
+                  clearRectangle(96, 0, 128, 64);
+                  if(warningMQ135State == SAD)
+                    oled.drawBitmap(96, 20, face1OLED[i], 32, 32, 1);
+                  else if(warningMQ135State == NORMAL)
+                    oled.drawBitmap(96, 20, face2OLED[i], 32, 32, 1);
+                  else if(warningMQ135State == HAPPY)
+                    oled.drawBitmap(96, 20, face3OLED[i], 32, 32, 1);
+                  oled.display();
+                  delay(FRAME_DELAY);
             }
             oled.display();
             delay(100);
           }
           if( enableShow == ENABLE)
             screenOLED = SCREEN1;
-          break; 
+          break;
+        case SCREEN3:  // Hiển thị Bụi
+          for(int j = 0; j < 2 && enableShow == ENABLE; j++) {
+            oled.clearDisplay();
+            oled.setTextSize(1);
+            oled.setCursor(0, 20);
+            oled.print("Bui min PM2.5: ");
+            oled.setTextSize(2);
+            oled.setCursor(0, 32);
+            oled.print(dustValue);
+            oled.setTextSize(1);
+            oled.print(" ug/m3");
+          
+            for(int i = 0; i < FRAME_COUNT_face1OLED && enableShow == ENABLE; i++) {
+                  clearRectangle(96, 0, 128, 64);
+                  if(warningDustState == SAD)
+                    oled.drawBitmap(96, 20, face1OLED[i], 32, 32, 1);
+                  else if(warningDustState == NORMAL)
+                    oled.drawBitmap(96, 20, face2OLED[i], 32, 32, 1);
+                  else if(warningDustState == HAPPY)
+                    oled.drawBitmap(96, 20, face3OLED[i], 32, 32, 1);
+                  oled.display();
+                  delay(FRAME_DELAY);
+            }
+            oled.display();
+            delay(100);
+          }
+          if( enableShow == ENABLE)
+            screenOLED = SCREEN1;
+          break;
         case SCREEN4:    // Đang kết nối Wifi
           oled.clearDisplay();
           oled.setTextSize(1);
@@ -549,7 +971,7 @@ void TaskOLEDDisplay(void *pvParameters) {
             oled.drawBitmap(0, 32, blynkOLED[FRAME_COUNT_wifiOLED/2], FRAME_WIDTH_32, FRAME_HEIGHT_32, 1);
             oled.display();
             delay(2000);
-            screenOLED = SCREEN3;
+            screenOLED = SCREEN1;
             enableShow = ENABLE;
           break;
         case SCREEN8:   // Đã kết nối Wifi, Mat kết nối Blynk
@@ -678,9 +1100,41 @@ void TaskOLEDDisplay(void *pvParameters) {
           default : 
             delay(500);
             break;
-      } 
+      }
       delay(10);
+
+      // Hiển thị MQ135 nếu chọn màn hình này
+      if(screenOLED == SCREEN_MQ135) {
+        showMQ135OLED();
+        // Sau khi hiển thị xong, chuyển về màn hình chính
+        screenOLED = SCREEN1;
+      }
   }
+}
+
+//------------------- Hiển thị MQ135 trên màn hình OLED -------------------
+void showMQ135OLED() {
+  oled.clearDisplay();
+  oled.setTextSize(1);
+  oled.setCursor(0, 20);
+  oled.print("MQ135 Ratio:");
+  oled.setTextSize(2);
+  oled.setCursor(0, 32);
+  oled.print(mq135GasRatio, 2);
+  
+  for(int i = 0; i < FRAME_COUNT_face1OLED; i++) {
+    clearRectangle(96, 0, 128, 64);
+    if(warningMQ135State == SAD)
+      oled.drawBitmap(96, 20, face1OLED[i], 32, 32, 1);
+    else if(warningMQ135State == NORMAL)
+      oled.drawBitmap(96, 20, face2OLED[i], 32, 32, 1);
+    else if(warningMQ135State == HAPPY)
+      oled.drawBitmap(96, 20, face3OLED[i], 32, 32, 1);
+    oled.display();
+    delay(FRAME_DELAY);
+  }
+  oled.display();
+  delay(2000);
 }
 
 
@@ -787,16 +1241,20 @@ void getDataFromClient(AsyncWebServerRequest *request, uint8_t *data, size_t len
     EtypePlant = (int) myObject["typePlant"];
   if(myObject.hasOwnProperty("tempThreshold1"))
     EtempThreshold1 = (int) myObject["tempThreshold1"];
-  if(myObject.hasOwnProperty("tempThreshold2")) 
+  if(myObject.hasOwnProperty("tempThreshold2"))
     EtempThreshold2 = (int) myObject["tempThreshold2"];
-  if(myObject.hasOwnProperty("humiThreshold1")) 
+  if(myObject.hasOwnProperty("humiThreshold1"))
     EhumiThreshold1 = (int) myObject["humiThreshold1"];
-  if(myObject.hasOwnProperty("humiThreshold2")) 
+  if(myObject.hasOwnProperty("humiThreshold2"))
     EhumiThreshold2 = (int) myObject["humiThreshold2"];
-  if(myObject.hasOwnProperty("soilMoistureThreshold1")) 
-    EsoilMoistureThreshold1 = (int) myObject["soilMoistureThreshold1"];
-  if(myObject.hasOwnProperty("soilMoistureThreshold2")) 
-    EsoilMoistureThreshold2 = (int) myObject["soilMoistureThreshold2"];
+  if(myObject.hasOwnProperty("dustThreshold1"))
+    EdustThreshold1 = (int) myObject["dustThreshold1"];
+  if(myObject.hasOwnProperty("dustThreshold2"))
+    EdustThreshold2 = (int) myObject["dustThreshold2"];
+  if(myObject.hasOwnProperty("mq135Threshold1"))
+    Emq135Threshold1 = (int) myObject["mq135Threshold1"];
+  if(myObject.hasOwnProperty("mq135Threshold2"))
+    Emq135Threshold2 = (int) myObject["mq135Threshold2"];
   writeEEPROM();
   
 
@@ -822,10 +1280,14 @@ void printValueSetup() {
     Serial.println(EhumiThreshold1);
     Serial.print("humiThreshold2 = ");
     Serial.println(EhumiThreshold2);
-    Serial.print("soilMoistureThreshold1 = ");
-    Serial.println(EsoilMoistureThreshold1);
-    Serial.print("soilMoistureThreshold2 = ");
-    Serial.println(EsoilMoistureThreshold2);
+    Serial.print("dustThreshold1 = ");
+    Serial.println(EdustThreshold1);
+    Serial.print("dustThreshold2 = ");
+    Serial.println(EdustThreshold2);
+    Serial.print("mq135Threshold1 = ");
+    Serial.println(Emq135Threshold1);
+    Serial.print("mq135Threshold2 = ");
+    Serial.println(Emq135Threshold2);
     Serial.print("autoWarning = ");
     Serial.println(autoWarning);
 }
@@ -842,8 +1304,10 @@ String getJsonData() {
   myObject["tempThreshold2"] = EtempThreshold2;
   myObject["humiThreshold1"] = EhumiThreshold1;
   myObject["humiThreshold2"] = EhumiThreshold2;
-  myObject["soilMoistureThreshold1"] = EsoilMoistureThreshold1;
-  myObject["soilMoistureThreshold2"] = EsoilMoistureThreshold2;
+  myObject["dustThreshold1"] = EdustThreshold1;
+  myObject["dustThreshold2"] = EdustThreshold2;
+  myObject["mq135Threshold1"] = Emq135Threshold1;
+  myObject["mq135Threshold2"] = Emq135Threshold2;
 
   String jsonData = JSON.stringify(myObject);
   return jsonData;
@@ -855,10 +1319,58 @@ String getJsonData() {
 //----------------------------- Task auto Warning--------------------------------
 void TaskAutoWarning(void *pvParameters)  {
     delay(20000);
+    bool buzzerActive = false;
+    unsigned long lastBuzzerToggle = 0;
+    const unsigned long BUZZER_TOGGLE_INTERVAL = 500; // Bật/tắt còi mỗi 500ms để tạo tiếng kêu nhấp nháy
+    
     while(1) {
       if(autoWarning == 1) {
+        // Kiểm tra xem có cảnh báo nào không (khi giá trị nằm ngoài ngưỡng an toàn)
+        bool hasWarning = false;
+        
+        // Kiểm tra nhiệt độ: ngoài ngưỡng khi < threshold1 hoặc > threshold2
+        if(tempValue < EtempThreshold1 || tempValue > EtempThreshold2) {
+          hasWarning = true;
+        }
+        
+        // Kiểm tra độ ẩm: ngoài ngưỡng khi < threshold1 hoặc > threshold2
+        if(humiValue < EhumiThreshold1 || humiValue > EhumiThreshold2) {
+          hasWarning = true;
+        }
+        
+        // Kiểm tra bụi: ngoài ngưỡng khi < threshold1 hoặc > threshold2
+        if(dustValue < EdustThreshold1 || dustValue > EdustThreshold2) {
+          hasWarning = true;
+        }
+        
+        // Kiểm tra MQ135: ngoài ngưỡng khi < threshold1 hoặc > threshold2
+        if(mq135GasRatio < Emq135Threshold1 || mq135GasRatio > Emq135Threshold2) {
+          hasWarning = true;
+        }
+        
+        // Nếu có cảnh báo, bật còi nhấp nháy
+        if(hasWarning) {
+          unsigned long currentTime = millis();
+          if(currentTime - lastBuzzerToggle >= BUZZER_TOGGLE_INTERVAL) {
+            buzzerActive = !buzzerActive;
+            digitalWrite(BUZZER, buzzerActive ? ENABLE : DISABLE);
+            lastBuzzerToggle = currentTime;
+          }
+        } else {
+          // Không có cảnh báo, tắt còi
+          if(buzzerActive) {
+            digitalWrite(BUZZER, DISABLE);
+            buzzerActive = false;
+          }
+        }
+      } else {
+        // autoWarning tắt, đảm bảo còi cũng tắt
+        if(buzzerActive) {
+          digitalWrite(BUZZER, DISABLE);
+          buzzerActive = false;
+        }
       }
-      delay(10000);
+      delay(100); // Kiểm tra thường xuyên hơn để còi phản ứng nhanh
     }
 }
 
@@ -888,18 +1400,26 @@ void readEEPROM() {
         Emqtt_server += char(EEPROM.read(i));
     if(Essid.length() == 0) Essid = "BLK";
 
-    EtypePlant      = EEPROM.read(199);
+    EtypePlant      = (int)EEPROM.read(199);
 
-    EtempThreshold1 = EEPROM.read(200);
-    EtempThreshold2 = EEPROM.read(201);
+    // Read as unsigned byte then cast to int to avoid sign extension issues
+    EtempThreshold1 = (int)((unsigned char)EEPROM.read(200));
+    EtempThreshold2 = (int)((unsigned char)EEPROM.read(201));
 
-    EhumiThreshold1 = EEPROM.read(202);
-    EhumiThreshold2 = EEPROM.read(203);
+    EhumiThreshold1 = (int)((unsigned char)EEPROM.read(202));
+    EhumiThreshold2 = (int)((unsigned char)EEPROM.read(203));
 
-    EsoilMoistureThreshold1 = EEPROM.read(204) * 100 + EEPROM.read(205);
-    EsoilMoistureThreshold2 = EEPROM.read(206) * 100 + EEPROM.read(207);  
+    EdustThreshold1 = (int)((unsigned char)EEPROM.read(204));
+    EdustThreshold2 = (int)((unsigned char)EEPROM.read(205));
 
-    autoWarning     = EEPROM.read(210);
+    Emq135Threshold1 = (int)((unsigned char)EEPROM.read(206));
+    Emq135Threshold2 = (int)((unsigned char)EEPROM.read(207));
+
+    // Read as unsigned byte then cast to int to avoid sign extension issues
+    autoWarning = (int)((unsigned char)EEPROM.read(210));
+    
+    Serial.print("Read autoWarning from EEPROM: ");
+    Serial.println(autoWarning);
 
     printValueSetup();
 }
@@ -914,6 +1434,17 @@ void clearEeprom() {
 
 // -------------------- Hàm ghi data vào EEPROM ------------------
 void writeEEPROM() {
+    Serial.println("Writing to EEPROM:");
+    Serial.print("  tempThreshold1 = "); Serial.println(EtempThreshold1);
+    Serial.print("  tempThreshold2 = "); Serial.println(EtempThreshold2);
+    Serial.print("  humiThreshold1 = "); Serial.println(EhumiThreshold1);
+    Serial.print("  humiThreshold2 = "); Serial.println(EhumiThreshold2);
+    Serial.print("  dustThreshold1 = "); Serial.println(EdustThreshold1);
+    Serial.print("  dustThreshold2 = "); Serial.println(EdustThreshold2);
+    Serial.print("  mq135Threshold1 = "); Serial.println(Emq135Threshold1);
+    Serial.print("  mq135Threshold2 = "); Serial.println(Emq135Threshold2);
+    Serial.print("  autoWarning = "); Serial.println(autoWarning);
+    
     clearEeprom();
     for (int i = 0; i < Essid.length(); ++i)
           EEPROM.write(i, Essid[i]);  
@@ -923,23 +1454,40 @@ void writeEEPROM() {
           EEPROM.write(64+i, Etoken[i]);
     for (int i = 0; i < Emqtt_server.length(); ++i)
           EEPROM.write(96+i, Emqtt_server[i]);
-    EEPROM.write(199, EtypePlant);               // lưu kiểu cây trồng
+    EEPROM.write(199, (byte)EtypePlant);               // lưu kiểu cây trồng
     
-    EEPROM.write(200, EtempThreshold1);          // lưu ngưỡng nhiệt độ 1
-    EEPROM.write(201, EtempThreshold2);          // lưu ngưỡng nhiệt độ 2
+    // Ensure values are in valid range (0-255) before writing
+    EEPROM.write(200, (byte)(EtempThreshold1 & 0xFF));          // lưu ngưỡng nhiệt độ 1
+    EEPROM.write(201, (byte)(EtempThreshold2 & 0xFF));          // lưu ngưỡng nhiệt độ 2
 
-    EEPROM.write(202, EhumiThreshold1);          // lưu ngưỡng độ ẩm 1
-    EEPROM.write(203, EhumiThreshold2);          // lưu ngưỡng độ ẩm 2
+    EEPROM.write(202, (byte)(EhumiThreshold1 & 0xFF));          // lưu ngưỡng độ ẩm 1
+    EEPROM.write(203, (byte)(EhumiThreshold2 & 0xFF));          // lưu ngưỡng độ ẩm 2
 
-    EEPROM.write(204, EsoilMoistureThreshold1 / 100);      // lưu hàng nghìn + trăm bụi 1
-    EEPROM.write(205, EsoilMoistureThreshold1 % 100);      // lưu hàng chục + đơn vị bụi 1
+    EEPROM.write(204, (byte)(EdustThreshold1 & 0xFF));          // lưu ngưỡng bụi 1
+    EEPROM.write(205, (byte)(EdustThreshold2 & 0xFF));          // lưu ngưỡng bụi 2
 
-    EEPROM.write(206, EsoilMoistureThreshold2 / 100);      // lưu hàng nghìn + trăm bụi 2
-    EEPROM.write(207, EsoilMoistureThreshold2 % 100);      // lưu hàng chục + đơn vị bụi 2
-    
+    EEPROM.write(206, (byte)(Emq135Threshold1 & 0xFF));         // lưu ngưỡng MQ135 1
+    EEPROM.write(207, (byte)(Emq135Threshold2 & 0xFF));         // lưu ngưỡng MQ135 2
+
+    // Lưu autoWarning để không bị mất khi cập nhật threshold
+    EEPROM.write(210, (byte)(autoWarning & 0xFF));              // lưu trạng thái autoWarning
+
     EEPROM.commit();
 
-    Serial.println("write eeprom");
+    Serial.println("EEPROM write completed");
+    
+    // Verify by reading back
+    Serial.println("Verifying EEPROM write:");
+    Serial.print("  Read back tempThreshold1 = "); Serial.println((int)((unsigned char)EEPROM.read(200)));
+    Serial.print("  Read back tempThreshold2 = "); Serial.println((int)((unsigned char)EEPROM.read(201)));
+    Serial.print("  Read back humiThreshold1 = "); Serial.println((int)((unsigned char)EEPROM.read(202)));
+    Serial.print("  Read back humiThreshold2 = "); Serial.println((int)((unsigned char)EEPROM.read(203)));
+    Serial.print("  Read back dustThreshold1 = "); Serial.println((int)((unsigned char)EEPROM.read(204)));
+    Serial.print("  Read back dustThreshold2 = "); Serial.println((int)((unsigned char)EEPROM.read(205)));
+    Serial.print("  Read back mq135Threshold1 = "); Serial.println((int)((unsigned char)EEPROM.read(206)));
+    Serial.print("  Read back mq135Threshold2 = "); Serial.println((int)((unsigned char)EEPROM.read(207)));
+    Serial.print("  Read back autoWarning = "); Serial.println((int)((unsigned char)EEPROM.read(210)));
+    
     delay(500);
 }
 
@@ -991,12 +1539,23 @@ void button_press_long_callback(uint8_t button_id) {
       break;
     case BUTTON3_ID :
       buzzerBeep(2);
-      Serial.println("btDOWN press short");
+      Serial.println("btDOWN press long - Toggle autoWarning");
       enableShow = DISABLE;
       autoWarning = 1 - autoWarning;
-      EEPROM.write(210, autoWarning);  EEPROM.commit();
+      Serial.print("Writing autoWarning to EEPROM (from button): ");
+      Serial.println(autoWarning);
+      EEPROM.write(210, (byte)(autoWarning & 0xFF));
+      EEPROM.commit();
+      // Verify by reading back
+      int readBack = (int)((unsigned char)EEPROM.read(210));
+      Serial.print("Read back autoWarning from EEPROM: ");
+      Serial.println(readBack);
       if(autoWarning == 0) screenOLED = SCREEN11;
       else screenOLED = SCREEN10;
+      // Publish autoWarning state immediately when changed via button
+      if (client.connected()) {
+        publishAutoWarning();
+      }
       break;  
   } 
 } 
@@ -1018,15 +1577,44 @@ void blinkLED(int numberBlink) {
     delay(300);
   }  
 }
+void TaskMQ135Sensor(void *pvParameters) {
+  // MQ135 Ratio = Rs / R0
+  // - Ratio < 1.0: Không khí sạch
+  // - Ratio ≈ 1.0: Không khí bình thường
+  // - Ratio > 1.0: Có khí độc hại (NH3, CO2, Benzen, Alcohol, Smoke...)
+  // - Ratio càng cao = nồng độ khí độc càng cao
 
+  analogSetPinAttenuation(MQ135_PIN, ADC_11db); // quan trọng
+  analogReadResolution(12);
 
+  while (1) {
+    // Đọc giá trị ADC từ cảm biến
+    int adc = analogRead(MQ135_PIN);
 
+    // Chuyển đổi ADC sang điện áp (Vout)
+    float vout = (adc / 4095.0f) * MQ135_VCC;
 
-      
-      
-      
+    // Tính điện trở của cảm biến (Rs) khi có khí
+    float rs = 0.0;
+    if (vout > 0.0f) {
+      rs = MQ135_RL * (MQ135_VCC - vout) / vout;
+    }
 
+    // Tính tỷ lệ Rs/R0 (Gas Ratio) - chỉ số chất lượng không khí
+    if (MQ135_R0 > 0.0f) {
+      mq135GasRatio = rs / MQ135_R0;
+    } else {
+      mq135GasRatio = 0.0;
+    }
 
+    Serial.printf("MQ135 ADC=%d | Rs=%.2f | Ratio=%.2f\n",
+                  adc, rs, mq135GasRatio);
 
+    if(mq135GasRatio < Emq135Threshold1 || mq135GasRatio > Emq135Threshold2) 
+      warningMQ135State = NORMAL;
+    else
+      warningMQ135State = HAPPY;
 
-  
+    vTaskDelay(pdMS_TO_TICKS(3000));
+  }
+}
